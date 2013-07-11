@@ -1,6 +1,8 @@
 package main
 
 import "github.com/kylelemons/go-gypsy/yaml"
+import "github.com/stathat/consistent"
+	
 
 import (
  "net"
@@ -14,17 +16,14 @@ const (
 	RECV_BUF_LEN = 1024
 )
 
-// Backends are of format server: port.
-var Backends map[string]string
+// Slice of backends.
+var Backends []string 
 
 /**
  * Main program.
  */
 func main() {
 	log.Print("Starting up concentrator")
-
-	// Make the backends map.
-	Backends = make(map[string]string)
 
 	var file string = "config.yml"
 	log.Print("Loading config file: ", file)
@@ -46,17 +45,25 @@ func main() {
 	for i := 0; i < server_lst.Len(); i++ {
 		node := server_lst.Item(i)
 		vals := node.(yaml.Map)
+
 		for index,element := range vals {
 			backend_host := fmt.Sprintf("%s", index)
 			backend_port := fmt.Sprintf("%s", element)
-			Backends[backend_host] = backend_port
 			log.Print(fmt.Sprintf("Adding backend %s:%s", backend_host, backend_port))
+			Backends = append(Backends, fmt.Sprintf("%s:%s", backend_host, backend_port))
 		}
     }
+
+	for _, backserver := range Backends {
+		log.Print(fmt.Sprintf("New server is: %s", backserver))
+	}
 
 	port, err := config.GetInt("port")
 	host, err := config.Get("host")
 	log.Print(fmt.Sprintf("Trying to listen on %s:%v", host, port))
+
+	relay_method, err := config.Get("relay_method")
+	log.Print(fmt.Sprintf("We want to relay using %s", relay_method))
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%v", host, port))
 	if err != nil {
@@ -105,10 +112,11 @@ func handleConnections(client net.Conn) {
     for {
         line, err := buff.ReadBytes('\n')
         if err != nil {
-            break
+        	return
         }
+        log.Print("Line: %s", string(line[:]))
         client.Write(line)
-        retransmitStatsd(string(line[:]))
+        retransmitUsingConsistentHashing(string(line[:]))
     }
 }
 
@@ -120,9 +128,8 @@ func handleConnections(client net.Conn) {
 func retransmitStatsd(message string) {
 	log.Print("Retransmitting ", message)
 
-	for backend_host,backend_port := range Backends {
-		var server = fmt.Sprintf("%s:%s", backend_host, backend_port)
-		log.Print("Testing ", server)
+	for _, server := range Backends {
+		log.Print(fmt.Sprintf("Testing %s", server))
 		conn, err := net.Dial("udp", server)
 		if err != nil {
 	   		log.Print("WARNING: Problem with UDP connection: ", err)
@@ -132,4 +139,32 @@ func retransmitStatsd(message string) {
 		// Send the message to the backend host.
 		fmt.Fprintf(conn, message)
 	}
+}
+
+/**
+ * Broadcast out the stats message to a single backend.
+ *
+ * @return void
+ */
+func retransmitUsingConsistentHashing(message string) {
+	log.Print(fmt.Sprintf("Retransmitting %s to the appropriate backend", message))
+
+	cons := consistent.New()
+
+	for _,server := range Backends {
+		log.Print(fmt.Sprintf("Adding %s to consistent hash ring", server))
+		cons.Add(server)
+	}
+
+	log.Print("Determining backend for message")
+	hashed_server, err := cons.Get(message)
+
+	log.Print("Chosen server: ", hashed_server)
+	conn, err := net.Dial("udp", hashed_server)
+	if err != nil {
+   		log.Print("WARNING: Problem with UDP connection: ", err)
+	}
+
+	// Send the message to the backend host.
+	fmt.Fprintf(conn, message)
 }

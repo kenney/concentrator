@@ -3,13 +3,19 @@
 ###
 name: "Concentrator"
 host: localhost
-port: 8127
+port: 8125
+
+
+###
+# How we want to relay requests.
+###
+relay_method:  consistent_hashing
 
 ###
 # Backend statsd servers
 ###
 backends:
- - 127.0.0.1: 8125
- - server3:   8125
- - server2:   8125
+ - 127.0.0.1: 8126
+ - 127.0.0.1: 8127
+ #- server2:   8125
 
