@@ -2,8 +2,8 @@
 # Main server configuration
 ###
 name: "Concentrator"
-host: localhost
-port: 8125
+host: 0.0.0.0
+port: 2003
 
 
 ###
@@ -12,10 +12,11 @@ port: 8125
 relay_method:  consistent_hashing
 
 ###
-# Backend statsd servers
+# Backend carbon or statsd servers.
+# Carbon is typically 2003. Statsd 8125
 ###
 backends:
- - 127.0.0.1: 8126
- - 127.0.0.1: 8127
+ - 127.0.0.1: 2003
+ #- 127.0.0.1: 8127
  #- server2:   8125
 

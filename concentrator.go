@@ -10,6 +10,7 @@ import (
  "os"
  "fmt"
  "bufio"
+ "strings"
 )
 
 const (
@@ -114,7 +115,7 @@ func handleConnections(client net.Conn) {
         if err != nil {
         	return
         }
-        log.Print("Line: %s", string(line[:]))
+        log.Print("Line: ", string(line[:]))
         client.Write(line)
         retransmitUsingConsistentHashing(string(line[:]))
     }
@@ -129,10 +130,10 @@ func retransmitStatsd(message string) {
 	log.Print("Retransmitting ", message)
 
 	for _, server := range Backends {
-		log.Print(fmt.Sprintf("Testing %s", server))
-		conn, err := net.Dial("udp", server)
+		log.Print(fmt.Sprintf("Testing server: ", server))
+		conn, err := net.Dial("tcp", server)
 		if err != nil {
-	   		log.Print("WARNING: Problem with UDP connection: ", err)
+	   		log.Print("WARNING: Problem with TCP connection: ", err)
 	   		continue
 		}
 
@@ -156,13 +157,21 @@ func retransmitUsingConsistentHashing(message string) {
 		cons.Add(server)
 	}
 
-	log.Print("Determining backend for message")
-	hashed_server, err := cons.Get(message)
+	// Carbon is format:  $key $value $timestamp
+	var message_bits = strings.Fields(message)
+
+	// Get just the $key.
+	stat_name := message_bits[0]
+	log.Print("Determining backend for message based on ", stat_name)
+
+	// Get which hashed server to use based on the stat name.
+	hashed_server, err := cons.Get(stat_name)
 
 	log.Print("Chosen server: ", hashed_server)
-	conn, err := net.Dial("udp", hashed_server)
+	conn, err := net.Dial("tcp", hashed_server)
 	if err != nil {
-   		log.Print("WARNING: Problem with UDP connection: ", err)
+   		log.Print("WARNING: Problem with TCP connection: ", err)
+   		return
 	}
 
 	// Send the message to the backend host.
